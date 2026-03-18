@@ -78,13 +78,37 @@ install -m 755 "${TMP}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
 echo ""
 echo "Installed ${BINARY} ${LATEST} to ${INSTALL_DIR}/${BINARY}"
 
-# Warn if INSTALL_DIR is not in PATH
+# Add INSTALL_DIR to PATH in shell profile if not already present
 case ":${PATH}:" in
   *":${INSTALL_DIR}:"*) ;;
   *)
-    echo ""
-    echo "  Note: ${INSTALL_DIR} is not in your PATH."
-    echo "  Add it with:  export PATH=\"\$PATH:${INSTALL_DIR}\""
+    PROFILE=""
+    if [ -f "${HOME}/.bashrc" ]; then
+      PROFILE="${HOME}/.bashrc"
+    elif [ -f "${HOME}/.bash_profile" ]; then
+      PROFILE="${HOME}/.bash_profile"
+    elif [ -f "${HOME}/.zshrc" ]; then
+      PROFILE="${HOME}/.zshrc"
+    elif [ -f "${HOME}/.profile" ]; then
+      PROFILE="${HOME}/.profile"
+    fi
+
+    if [ -n "$PROFILE" ]; then
+      LINE="export PATH=\"\$PATH:${INSTALL_DIR}\""
+      if ! grep -qF "$LINE" "$PROFILE" 2>/dev/null; then
+        echo "" >> "$PROFILE"
+        echo "# Added by network-agent installer" >> "$PROFILE"
+        echo "$LINE" >> "$PROFILE"
+        echo ""
+        echo "  Note: Added ${INSTALL_DIR} to PATH in ${PROFILE}"
+        echo "  Run:  source ${PROFILE}"
+      fi
+    else
+      echo ""
+      echo "  Note: ${INSTALL_DIR} is not in your PATH."
+      echo "  Add it with:  export PATH=\"\$PATH:${INSTALL_DIR}\""
+    fi
+    export PATH="$PATH:${INSTALL_DIR}"
     ;;
 esac
 
