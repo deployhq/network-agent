@@ -25,6 +25,8 @@ network-agent restart      # Stop then start
 network-agent run          # Run in foreground (useful for systemd, Docker)
 network-agent status       # Show whether agent is running
 network-agent accesslist   # Display the current IP access list
+network-agent install      # Install as a system service (launchd on macOS, systemd on Linux)
+network-agent check        # Verify configuration and test server connectivity
 network-agent version      # Print agent version
 ```
 
