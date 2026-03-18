@@ -78,42 +78,44 @@ install -m 755 "${TMP}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
 echo ""
 echo "Installed ${BINARY} ${LATEST} to ${INSTALL_DIR}/${BINARY}"
 
-# Add INSTALL_DIR to PATH in shell profile if not already present
-case ":${PATH}:" in
-  *":${INSTALL_DIR}:"*) ;;
-  *)
-    PROFILE=""
-    if [ -f "${HOME}/.bashrc" ]; then
-      PROFILE="${HOME}/.bashrc"
-    elif [ -f "${HOME}/.bash_profile" ]; then
-      PROFILE="${HOME}/.bash_profile"
-    elif [ -f "${HOME}/.zshrc" ]; then
-      PROFILE="${HOME}/.zshrc"
-    elif [ -f "${HOME}/.profile" ]; then
-      PROFILE="${HOME}/.profile"
-    fi
+# ── PATH setup ────────────────────────────────────────────────────────────────
+# When installing to ~/.local/bin, ensure the directory is in the shell profile
+# and always tell the user to reload — curl|bash runs in a subprocess and cannot
+# update the parent shell's PATH or hash table.
 
-    if [ -n "$PROFILE" ]; then
-      LINE="export PATH=\"\$PATH:${INSTALL_DIR}\""
-      if ! grep -qF "$LINE" "$PROFILE" 2>/dev/null; then
-        echo "" >> "$PROFILE"
-        echo "# Added by network-agent installer" >> "$PROFILE"
-        echo "$LINE" >> "$PROFILE"
-      fi
-      PATH_NOTE="$PROFILE"
-    else
-      PATH_NOTE="manual"
+RELOAD_CMD=""
+
+if [ "$INSTALL_DIR" != "/usr/local/bin" ]; then
+  PROFILE=""
+  if [ -f "${HOME}/.bashrc" ]; then
+    PROFILE="${HOME}/.bashrc"
+  elif [ -f "${HOME}/.bash_profile" ]; then
+    PROFILE="${HOME}/.bash_profile"
+  elif [ -f "${HOME}/.zshrc" ]; then
+    PROFILE="${HOME}/.zshrc"
+  elif [ -f "${HOME}/.profile" ]; then
+    PROFILE="${HOME}/.profile"
+  fi
+
+  if [ -n "$PROFILE" ]; then
+    LINE="export PATH=\"\$PATH:${INSTALL_DIR}\""
+    if ! grep -qF "$LINE" "$PROFILE" 2>/dev/null; then
+      echo "" >> "$PROFILE"
+      echo "# Added by network-agent installer" >> "$PROFILE"
+      echo "$LINE" >> "$PROFILE"
     fi
-    export PATH="$PATH:${INSTALL_DIR}"
-    ;;
-esac
+    RELOAD_CMD="source ${PROFILE}"
+  else
+    RELOAD_CMD="export PATH=\"\$PATH:${INSTALL_DIR}\""
+  fi
+fi
+
+# ── Get started ───────────────────────────────────────────────────────────────
 
 echo ""
 echo "Get started:"
-if [ "${PATH_NOTE:-}" = "manual" ]; then
-  echo "  export PATH=\"\$PATH:${INSTALL_DIR}\"    # add to PATH first"
-elif [ -n "${PATH_NOTE:-}" ]; then
-  echo "  source ${PATH_NOTE}    # reload PATH first"
+if [ -n "$RELOAD_CMD" ]; then
+  echo "  ${RELOAD_CMD}"
 fi
 echo "  ${BINARY} setup    # provision certificate"
 echo "  ${BINARY} start    # start the agent"
