@@ -99,14 +99,10 @@ case ":${PATH}:" in
         echo "" >> "$PROFILE"
         echo "# Added by network-agent installer" >> "$PROFILE"
         echo "$LINE" >> "$PROFILE"
-        echo ""
-        echo "  Note: Added ${INSTALL_DIR} to PATH in ${PROFILE}"
-        echo "  Run:  source ${PROFILE}"
       fi
+      PATH_NOTE="$PROFILE"
     else
-      echo ""
-      echo "  Note: ${INSTALL_DIR} is not in your PATH."
-      echo "  Add it with:  export PATH=\"\$PATH:${INSTALL_DIR}\""
+      PATH_NOTE="manual"
     fi
     export PATH="$PATH:${INSTALL_DIR}"
     ;;
@@ -114,5 +110,10 @@ esac
 
 echo ""
 echo "Get started:"
+if [ "${PATH_NOTE:-}" = "manual" ]; then
+  echo "  export PATH=\"\$PATH:${INSTALL_DIR}\"    # add to PATH first"
+elif [ -n "${PATH_NOTE:-}" ]; then
+  echo "  source ${PATH_NOTE}    # reload PATH first"
+fi
 echo "  ${BINARY} setup    # provision certificate"
 echo "  ${BINARY} start    # start the agent"
