@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - run: go test -race -cover ./...
 
   lint:
@@ -25,7 +25,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}

@@ -12,7 +12,11 @@ directly reachable from the internet.
 
 ## Installation
 
-Download the binary for your platform from the [releases](../../releases) page and
+```bash
+curl -sSL https://raw.githubusercontent.com/deployhq/network-agent/main/install.sh | bash
+```
+
+Or download the binary for your platform from the [releases](../../releases) page and
 place it in your `PATH`.
 
 ## Usage
