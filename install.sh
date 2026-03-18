@@ -110,12 +110,32 @@ if [ "$INSTALL_DIR" != "/usr/local/bin" ]; then
   fi
 fi
 
+# ── Check for running agent ───────────────────────────────────────────────────
+
+PID_FILE="${HOME}/.deploy/agent.pid"
+RUNNING_PID=""
+if [ -f "$PID_FILE" ]; then
+  PID=$(cat "$PID_FILE" 2>/dev/null || true)
+  if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+    RUNNING_PID="$PID"
+  fi
+fi
+
 # ── Get started ───────────────────────────────────────────────────────────────
 
 echo ""
+if [ -n "$RUNNING_PID" ]; then
+  echo "  Warning: an agent is already running (PID ${RUNNING_PID})."
+  echo "  Stop it first with one of:"
+  echo "    network-agent stop    # if already using the new binary"
+  echo "    deploy-agent stop     # if still using the Ruby gem"
+  echo ""
+fi
 echo "Get started:"
 if [ -n "$RELOAD_CMD" ]; then
   echo "  ${RELOAD_CMD}"
 fi
-echo "  ${BINARY} setup    # provision certificate"
+if [ -z "$RUNNING_PID" ]; then
+  echo "  ${BINARY} setup    # provision certificate"
+fi
 echo "  ${BINARY} start    # start the agent"
