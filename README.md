@@ -1,14 +1,24 @@
-# network-agent (Go)
+# network-agent
 
-Go rewrite of the [deploy-agent](https://github.com/deployhq/deploy-agent) Ruby gem.
+A secure proxy that allows [DeployHQ](https://www.deployhq.com) to forward connections
+to servers behind firewalls. The agent establishes an outbound TLS connection to
+DeployHQ's servers and proxies deployment traffic to allowed destinations based on an
+IP/network allowlist.
 
-Single static binary — no Ruby runtime required.
+## How It Works
 
-## What it does
+```
+                    TLS (port 7777)
+  DeployHQ  <————————————————————————>  Deploy Agent  ————>  Your Server(s)
+              mutual authentication      (behind firewall)     proxy
+```
 
-Creates a reverse mTLS tunnel from inside a customer firewall to the DeployHQ agent
-server (`agent.deployhq.com:7777`), enabling deployments to servers that aren't
-directly reachable from the internet.
+The agent connects **outbound** to DeployHQ, so no inbound firewall rules are needed.
+Connections to destination servers are restricted to an explicit allowlist of IPs and
+networks.
+
+Go rewrite of the [deploy-agent](https://github.com/deployhq/deploy-agent) Ruby gem —
+single static binary, no Ruby runtime required.
 
 ## Installation
 
@@ -65,11 +75,11 @@ Add `-v` / `--verbose` before the command for debug logging.
 Users already running the Ruby gem can migrate in place — the Go binary uses the
 same `~/.deploy/` configuration files:
 
-1. `network-agent stop` (Ruby)
-2. Replace `network-agent` binary in `$PATH` with the Go binary
+1. `deploy-agent stop` (Ruby gem)
+2. Install the Go binary: `curl -sSL https://deployhq.com/install/network-agent | bash`
 3. `network-agent start` (Go)
 
-To roll back: stop the Go binary, reinstall the gem, start again.
+To roll back: `network-agent stop`, then `gem install deploy-agent` and `deploy-agent start`.
 
 ## Environment variables
 
