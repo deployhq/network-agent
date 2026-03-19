@@ -13,7 +13,7 @@ directly reachable from the internet.
 ## Installation
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/deployhq/network-agent/main/install.sh | bash
+curl -sSL https://deployhq.com/install/network-agent | bash
 ```
 
 Or download the binary for your platform from the [releases](../../releases) page and
@@ -31,6 +31,7 @@ network-agent status       # Show whether agent is running
 network-agent accesslist   # Display the current IP access list
 network-agent install      # Install as a system service (launchd on macOS, systemd on Linux)
 network-agent check        # Verify configuration and test server connectivity
+network-agent update       # Update to the latest version
 network-agent version      # Print agent version
 ```
 

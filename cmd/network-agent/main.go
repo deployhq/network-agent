@@ -37,6 +37,7 @@ import (
 	"github.com/deployhq/network-agent/internal/install"
 	"github.com/deployhq/network-agent/internal/setup"
 	"github.com/deployhq/network-agent/internal/tunnel"
+	"github.com/deployhq/network-agent/internal/update"
 )
 
 // Version is injected at build time via ldflags: -X main.Version=x.y.z
@@ -99,6 +100,9 @@ func main() {
 	case "check":
 		cmdCheck(paths)
 
+	case "update":
+		update.Run(Version)
+
 	case "version":
 		fmt.Println(Version)
 
@@ -109,7 +113,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("Usage: network-agent [setup|start|stop|restart|run|status|accesslist|install|check|version]")
+	fmt.Println("Usage: network-agent [setup|start|stop|restart|run|status|accesslist|install|check|update|version]")
 }
 
 func cmdStart(paths config.Paths, verbose bool) {
