@@ -258,6 +258,10 @@ func TestRenewResponseStatusesThatWriteNothing(t *testing.T) {
 	}{
 		{"current", protocol.RenewStatusCurrent, func(*renewFixture) []byte { return nil }},
 		{"error", protocol.RenewStatusError, func(*renewFixture) []byte { return []byte("agent has no certificate on file") }},
+		// A server that answered RENEWED with the certificate the agent already
+		// presents would otherwise spin it through connect-renew-reconnect
+		// forever, so this must not recycle the connection either.
+		{"renewed with the certificate already installed", protocol.RenewStatusRenewed, func(f *renewFixture) []byte { return f.originalPEM }},
 		{"renewed but untrusted issuer", protocol.RenewStatusRenewed, func(f *renewFixture) []byte { return f.untrustedPEM }},
 		{"renewed but malformed", protocol.RenewStatusRenewed, func(*renewFixture) []byte { return []byte("not a certificate") }},
 		{"renewed with an empty body", protocol.RenewStatusRenewed, func(*renewFixture) []byte { return nil }},

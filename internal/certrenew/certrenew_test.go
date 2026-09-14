@@ -3,6 +3,8 @@ package certrenew_test
 import (
 	"bytes"
 	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -130,6 +132,62 @@ func TestApplyInstallsRenewedCertificate(t *testing.T) {
 	}
 	if !reloaded.Equal(installed) {
 		t.Error("certificate read back from disk differs from the one Apply reported")
+	}
+}
+
+// TestApplyIsANoOpWhenTheCertificateIsAlreadyInstalled: a server that keeps
+// answering RENEWED with the certificate the agent already presents must not
+// push it through a connect-renew-reconnect loop forever. The comparison is on
+// the DER, so re-encoded PEM does not read as a different certificate.
+func TestApplyIsANoOpWhenTheCertificateIsAlreadyInstalled(t *testing.T) {
+	tests := []struct {
+		name      string
+		candidate func(f *fixture) []byte
+	}{
+		{"the exact bytes on disk", func(f *fixture) []byte { return f.originalPEM }},
+		{"the same certificate, re-encoded", func(f *fixture) []byte {
+			block, _ := pem.Decode(f.originalPEM)
+			if block == nil {
+				t.Fatal("fixture certificate is not PEM")
+			}
+			// Same DER, different PEM framing: extra trailing newline and a
+			// header the original does not carry.
+			out := pem.EncodeToMemory(&pem.Block{
+				Type:    "CERTIFICATE",
+				Headers: map[string]string{"Comment": "re-encoded"},
+				Bytes:   block.Bytes,
+			})
+			return append(out, '\n')
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			before, err := os.Stat(f.certPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			candidate := tt.candidate(f)
+			if _, err := certrenew.Apply(f.request(candidate)); !errors.Is(err, certrenew.ErrUnchanged) {
+				t.Fatalf("Apply returned %v, want ErrUnchanged", err)
+			}
+
+			if !bytes.Equal(f.onDisk(t), f.originalPEM) {
+				t.Error("certificate file was rewritten")
+			}
+			after, err := os.Stat(f.certPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !after.ModTime().Equal(before.ModTime()) {
+				t.Error("certificate file was touched")
+			}
+			if _, err := os.Stat(f.certPath + ".tmp"); err == nil {
+				t.Error("temporary file left behind")
+			}
+		})
 	}
 }
 

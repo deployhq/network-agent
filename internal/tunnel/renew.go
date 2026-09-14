@@ -105,7 +105,16 @@ func (sc *ServerConn) installRenewedCertificate(certPEM []byte) error {
 		Current:      current,
 		CandidatePEM: certPEM,
 	})
-	if err != nil {
+	switch {
+	case errors.Is(err, certrenew.ErrUnchanged):
+		// The server offered the certificate the agent already presents.
+		// Reconnecting would change nothing, and a server that keeps answering
+		// this way would spin the agent through connect-renew-reconnect
+		// forever. Stay on this connection.
+		sc.log.Debug("server offered the certificate already installed, nothing to do")
+		return nil
+
+	case err != nil:
 		// Nothing was written; the agent carries on with the certificate it
 		// has and will ask again on the next connection.
 		sc.log.Warn("certificate renewal rejected", "err", err)

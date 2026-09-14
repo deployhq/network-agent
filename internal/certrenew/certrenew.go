@@ -20,11 +20,20 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 )
+
+// ErrUnchanged reports that the offered certificate is byte for byte the one
+// already installed, so there is nothing to write.
+//
+// It is a normal outcome, not a failure: a server that keeps answering RENEWED
+// with the certificate the agent already has must not push it through a
+// connect-renew-reconnect loop forever.
+var ErrUnchanged = errors.New("certificate is already installed")
 
 // renameAttempts / renameDelay bound the retry loop around the final rename.
 //
@@ -61,11 +70,13 @@ type Request struct {
 	CandidatePEM []byte
 }
 
-// Apply validates req.CandidatePEM and, only when every check passes,
-// atomically replaces the file at req.CertPath with it.
+// Apply validates req.CandidatePEM and, only when every check passes and the
+// certificate actually differs from the one installed, atomically replaces the
+// file at req.CertPath with it.
 //
-// On any error nothing has been written and the existing certificate file is
-// untouched. The returned certificate is the newly installed one.
+// On any error — ErrUnchanged included — nothing has been written and the
+// existing certificate file is untouched. The returned certificate is the newly
+// installed one.
 func Apply(req Request) (*x509.Certificate, error) {
 	candidate, err := Validate(req)
 	if err != nil {
@@ -130,6 +141,13 @@ func Validate(req Request) (*x509.Certificate, error) {
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
 	}); err != nil {
 		return nil, fmt.Errorf("renewed certificate does not verify against the trusted CAs: %w", err)
+	}
+
+	// Last, once the candidate is known good: is it the one already installed?
+	// Compare the DER, so PEM line endings or trailing whitespace cannot make
+	// an identical certificate look like a new one.
+	if bytes.Equal(candidate.Raw, req.Current.Raw) {
+		return candidate, ErrUnchanged
 	}
 
 	return candidate, nil
