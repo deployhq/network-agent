@@ -153,9 +153,24 @@ func cmdRun(paths config.Paths, verbose bool) {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 
-	tlsCfg, err := config.NewTLSConfig(paths, caroot.CACert, config.VerifyTLS())
+	caCert, err := config.CACert(caroot.CACert)
+	if err != nil {
+		log.Error("CA certificate error", "err", err)
+		os.Exit(1)
+	}
+
+	tlsCfg, err := config.NewTLSConfig(paths, caCert, config.VerifyTLS())
 	if err != nil {
 		log.Error("TLS configuration error", "err", err)
+		os.Exit(1)
+	}
+
+	// The same trust anchors gate in-band certificate renewal: a certificate
+	// the agent would not accept from the server is not one it will install
+	// for itself.
+	caRoots, err := config.NewCertPool(caCert)
+	if err != nil {
+		log.Error("CA certificate error", "err", err)
 		os.Exit(1)
 	}
 
@@ -173,7 +188,13 @@ func cmdRun(paths config.Paths, verbose bool) {
 	// If PID already written by the parent (start), this is a no-op for our PID.
 	_ = daemon.WritePID(paths.PID)
 
-	if err := tunnel.RunAgent(tlsCfg, paths, log); err != nil {
+	opts := tunnel.Options{
+		Version: Version,
+		Paths:   paths,
+		CARoots: caRoots,
+	}
+
+	if err := tunnel.RunAgent(tlsCfg, opts, log); err != nil {
 		log.Error("agent stopped with error", "err", err)
 		daemon.RemovePID(paths.PID)
 		os.Exit(1)
@@ -260,11 +281,33 @@ func cmdCheck(paths config.Paths) {
 		fmt.Println(")")
 	}
 
+	// --- CA bundle ---------------------------------------------------------
+	// Which CAs this binary trusts is the thing a CA rotation turns on, so
+	// surface it rather than leaving operators to inspect the binary.
+	caCert, caErr := config.CACert(caroot.CACert)
+	if caErr != nil {
+		fmt.Printf("  CA bundle     FAIL  %v\n", caErr)
+		ok = false
+	} else if cas, err := caroot.ParseBundle(caCert); err != nil {
+		fmt.Printf("  CA bundle     FAIL  %v\n", err)
+		ok = false
+	} else {
+		source := "embedded"
+		if override := os.Getenv(config.CAFileEnv); override != "" {
+			source = override
+		}
+		fmt.Printf("  CA bundle     OK    %d CA(s) from %s\n", len(cas), source)
+		for _, c := range cas {
+			fmt.Printf("                      %s (expires %s)\n",
+				c.Subject.CommonName, c.NotAfter.UTC().Format("2006-01-02"))
+		}
+	}
+
 	// --- Connectivity ------------------------------------------------------
 	serverAddr := config.ServerHost() + ":" + config.ServerPort
 	fmt.Printf("  Connectivity  ")
 
-	tlsCfg, err := config.NewTLSConfig(paths, caroot.CACert, config.VerifyTLS())
+	tlsCfg, err := config.NewTLSConfig(paths, caCert, config.VerifyTLS())
 	if err != nil {
 		fmt.Printf("FAIL  TLS config error: %v\n", err)
 		ok = false
