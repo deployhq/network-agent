@@ -188,16 +188,27 @@ func (r *serverReader) next() protocol.Packet {
 
 // connectAgent starts the agent in a goroutine and returns immediately.
 // The TLS handshake completes once the caller's fake server calls accept().
+//
+// Options are left at their zero value, which disables certificate renewal —
+// these tests exercise the proxy protocol. See renew_test.go for the renewal
+// exchange.
 func connectAgent(t *testing.T, serverAddr string, certs *testCerts, access *acl.AccessList) <-chan error {
 	t.Helper()
 	cfg := &tls.Config{
 		Certificates: []tls.Certificate{certs.clientCert},
 		RootCAs:      certs.caPool,
 	}
+	return runAgentConn(t, cfg, serverAddr, access, tunnel.Options{})
+}
+
+// runAgentConn drives one ServerConn to completion and reports the error Run
+// returned.
+func runAgentConn(t *testing.T, cfg *tls.Config, serverAddr string, access *acl.AccessList, opts tunnel.Options) <-chan error {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	errc := make(chan error, 1)
 	go func() {
-		sc, err := tunnel.Connect(cfg, serverAddr, access, log)
+		sc, err := tunnel.Connect(cfg, serverAddr, access, opts, log)
 		if err != nil {
 			errc <- err
 			return

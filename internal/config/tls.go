@@ -8,9 +8,21 @@ import (
 	"strings"
 )
 
+// NewCertPool parses a PEM bundle into a certificate pool. The bundle may hold
+// more than one CA — that is how an agent trusts the old and the new DeployHQ
+// CA simultaneously during a CA rotation.
+func NewCertPool(caCert []byte) (*x509.CertPool, error) {
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caCert) {
+		return nil, fmt.Errorf("failed to parse CA certificate")
+	}
+	return pool, nil
+}
+
 // NewTLSConfig builds a mutual-TLS config for the agent:
-//   - Client certificate: ~/.deploy/agent.crt + agent.key
-//   - Server verification: embedded CA cert passed in via caCert
+//   - Client certificate: ~/.deploy/agent.crt + agent.key, re-read from disk on
+//     every handshake (see below)
+//   - Server verification: CA bundle passed in via caCert
 //
 // When verify is false, server certificate verification is skipped (dev/testing).
 //
@@ -20,13 +32,27 @@ import (
 // VerifyConnection callback that checks the CA chain and then falls back to CN
 // matching when no SANs are present.
 func NewTLSConfig(paths Paths, caCert []byte, verify bool) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(paths.Certificate, paths.Key)
-	if err != nil {
+	// Load once up front so a missing, unreadable or mismatched key pair is a
+	// hard error at startup rather than a puzzling handshake failure later.
+	if _, err := tls.LoadX509KeyPair(paths.Certificate, paths.Key); err != nil {
 		return nil, fmt.Errorf("loading agent certificate: %w", err)
 	}
 
 	cfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
+		// Certificates is deliberately left nil. A single *tls.Config is built
+		// once at start-up and reused for every reconnect, so a certificate
+		// cached here would keep being presented until the process restarted —
+		// which would defeat certificate renewal, where the agent replaces
+		// agent.crt in place and simply reconnects. Reading the key pair per
+		// handshake instead makes the renewed certificate take effect on the
+		// very next connection, with no customer-side restart.
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			cert, err := tls.LoadX509KeyPair(paths.Certificate, paths.Key)
+			if err != nil {
+				return nil, fmt.Errorf("loading agent certificate: %w", err)
+			}
+			return &cert, nil
+		},
 	}
 
 	if !verify {
@@ -34,9 +60,9 @@ func NewTLSConfig(paths Paths, caCert []byte, verify bool) (*tls.Config, error) 
 		return cfg, nil
 	}
 
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(caCert) {
-		return nil, fmt.Errorf("failed to parse CA certificate")
+	pool, err := NewCertPool(caCert)
+	if err != nil {
+		return nil, err
 	}
 
 	serverHost := ServerHost()
