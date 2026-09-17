@@ -39,6 +39,10 @@ type fixture struct {
 	wrongKey     []byte
 	unknownCA    []byte
 
+	// Kept so a test can mint a variant the fixture does not carry.
+	newCA *testca.CA
+	agent *testca.Identity
+
 	roots *x509.CertPool
 }
 
@@ -73,6 +77,8 @@ func newFixture(t *testing.T) *fixture {
 		wrongSubject: newCA.Reissue(t, agent, "Deploy Agent #99", agentSerial),
 		wrongKey:     impostor.CertPEM,
 		unknownCA:    otherCA.Reissue(t, agent, agentCN, agentSerial),
+		newCA:        newCA,
+		agent:        agent,
 		roots:        testca.Pool(oldCA, newCA),
 	}
 }
@@ -132,6 +138,40 @@ func TestApplyInstallsRenewedCertificate(t *testing.T) {
 	}
 	if !reloaded.Equal(installed) {
 		t.Error("certificate read back from disk differs from the one Apply reported")
+	}
+}
+
+// TestApplyRejectsACertificateThatCannotDoClientAuth: the agent presents its
+// certificate for client authentication and nothing else. A replacement that
+// pairs with the key, keeps subject and serial and chains to a trusted CA, but
+// whose extended key usage rules client authentication out, would be written to
+// disk and then refused by the server on every reconnect -- the agent is behind
+// a customer's firewall with its working certificate already gone. A real agent
+// certificate carries no extended key usage at all, which remains valid for any
+// usage, so requiring ClientAuth costs nothing and closes that door.
+func TestApplyRejectsACertificateThatCannotDoClientAuth(t *testing.T) {
+	f := newFixture(t)
+
+	serverAuthOnly := f.newCA.ReissueWithExtKeyUsage(t, f.agent, agentCN, agentSerial, x509.ExtKeyUsageServerAuth)
+
+	if _, err := certrenew.Apply(f.request(serverAuthOnly)); err == nil {
+		t.Fatal("Apply accepted a certificate that cannot be used for client authentication")
+	}
+	if got := f.onDisk(t); !bytes.Equal(got, f.originalPEM) {
+		t.Error("the working certificate was replaced by one the server would reject")
+	}
+}
+
+// TestApplyAcceptsAnExplicitClientAuthCertificate is the control for the test
+// above: tightening the check must not reject a certificate that names the
+// usage explicitly, only one that excludes it.
+func TestApplyAcceptsAnExplicitClientAuthCertificate(t *testing.T) {
+	f := newFixture(t)
+
+	clientAuth := f.newCA.ReissueWithExtKeyUsage(t, f.agent, agentCN, agentSerial, x509.ExtKeyUsageClientAuth)
+
+	if _, err := certrenew.Apply(f.request(clientAuth)); err != nil {
+		t.Fatalf("Apply rejected an explicit clientAuth certificate: %v", err)
 	}
 }
 

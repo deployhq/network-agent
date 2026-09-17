@@ -131,14 +131,17 @@ func Validate(req Request) (*x509.Certificate, error) {
 			candidate.SerialNumber, req.Current.SerialNumber)
 	}
 
-	// (c) The certificate must chain to a CA this agent trusts. Mirrors the
-	// VerifyOptions used by config.NewTLSConfig's VerifyConnection: roots only
-	// and no DNSName, because DeployHQ's certificates are CN-only with no SANs.
-	// KeyUsageAny because an agent certificate carries no extended key usage
-	// extension at all and the zero value of KeyUsages would demand ServerAuth.
+	// (c) The certificate must chain to a CA this agent trusts, AND be usable
+	// for the one thing the agent does with it: client authentication. Roots
+	// only and no DNSName, because DeployHQ's certificates are CN-only with no
+	// SANs. ClientAuth rather than Any: a certificate carrying no extended key
+	// usage -- which is what the backend actually mints -- is valid for every
+	// usage and still passes, while one whose EKU rules client authentication
+	// out is refused here rather than on every reconnect after it has already
+	// replaced the working certificate.
 	if _, err := candidate.Verify(x509.VerifyOptions{
 		Roots:     req.Roots,
-		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}); err != nil {
 		return nil, fmt.Errorf("renewed certificate does not verify against the trusted CAs: %w", err)
 	}

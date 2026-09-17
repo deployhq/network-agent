@@ -124,14 +124,26 @@ func (ca *CA) Reissue(t *testing.T, id *Identity, commonName string, serial int6
 	return certPEMBytes
 }
 
-func (ca *CA) sign(t *testing.T, pub crypto.PublicKey, commonName string, serial int64) ([]byte, *x509.Certificate) {
+// ReissueWithExtKeyUsage is Reissue for a certificate that DOES carry an
+// extended key usage extension. Real agent certificates carry none, so this
+// exists to build the ones an agent must refuse -- a server-auth-only
+// certificate that would be rejected by the server's client authentication.
+func (ca *CA) ReissueWithExtKeyUsage(t *testing.T, id *Identity, commonName string, serial int64, eku ...x509.ExtKeyUsage) []byte {
+	t.Helper()
+	certPEMBytes, _ := ca.sign(t, id.key.Public(), commonName, serial, eku...)
+	return certPEMBytes
+}
+
+func (ca *CA) sign(t *testing.T, pub crypto.PublicKey, commonName string, serial int64, eku ...x509.ExtKeyUsage) ([]byte, *x509.Certificate) {
 	t.Helper()
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(serial),
 		Subject:      subject(commonName),
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(10 * 365 * 24 * time.Hour),
-		// No SANs, no KeyUsage, no ExtKeyUsage: exactly as DeployHQ mints them.
+		// No SANs, no KeyUsage, and no ExtKeyUsage unless a test asks for one:
+		// exactly as DeployHQ mints them.
+		ExtKeyUsage: eku,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.Cert, pub, ca.key)
 	if err != nil {
