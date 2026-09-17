@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -8,6 +9,10 @@ import (
 	"os"
 	"strings"
 )
+
+// pemBegin opens every PEM block; a bundle that does not start with it, or
+// that carries more of them than parse, is malformed.
+const pemBegin = "-----BEGIN "
 
 // NewCertPool parses a PEM bundle into a certificate pool. The bundle may hold
 // more than one CA — that is how an agent trusts the old and the new DeployHQ
@@ -22,11 +27,26 @@ func NewCertPool(caCert []byte) (*x509.CertPool, error) {
 	rest := caCert
 	added := 0
 
+	// pem.Decode SKIPS anything it cannot parse ahead of a block it can, so
+	// neither junk before the first block nor a BEGIN line with no matching END
+	// would be reported by decoding alone. Both are refused here: each chunk has
+	// to start with a BEGIN line, and the number of blocks decoded has to match
+	// the number of BEGIN lines in the file.
+	begins := bytes.Count(caCert, []byte(pemBegin))
+
 	for {
+		rest = bytes.TrimLeft(rest, " \t\r\n")
+		if len(rest) == 0 {
+			break
+		}
+		if !bytes.HasPrefix(rest, []byte(pemBegin)) {
+			return nil, fmt.Errorf("CA bundle has data that is not a PEM certificate, after %d certificate(s)", added)
+		}
+
 		var block *pem.Block
 		block, rest = pem.Decode(rest)
 		if block == nil {
-			break
+			return nil, fmt.Errorf("CA bundle has an unreadable PEM block after %d certificate(s)", added)
 		}
 		if block.Type != "CERTIFICATE" {
 			return nil, fmt.Errorf("CA bundle holds a %q block, not a certificate", block.Type)
@@ -42,8 +62,8 @@ func NewCertPool(caCert []byte) (*x509.CertPool, error) {
 	if added == 0 {
 		return nil, fmt.Errorf("failed to parse CA certificate")
 	}
-	if trailing := strings.TrimSpace(string(rest)); trailing != "" {
-		return nil, fmt.Errorf("CA bundle has %d trailing bytes that are not a PEM certificate", len(trailing))
+	if added != begins {
+		return nil, fmt.Errorf("CA bundle declares %d certificates but only %d could be read", begins, added)
 	}
 	return pool, nil
 }

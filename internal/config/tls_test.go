@@ -250,6 +250,25 @@ func TestNewCertPoolRejectsAPartiallyMalformedBundle(t *testing.T) {
 	}
 }
 
+// TestNewCertPoolRejectsWhatPemDecodeWouldSkip: encoding/pem skips anything it
+// cannot parse BEFORE a block it can -- leading junk, or a BEGIN line with no
+// matching END. Either would leave the agent trusting whichever CA happened to
+// parse, which is the same silent half-trust as a malformed block at the end of
+// the file, just at the other end of it.
+func TestNewCertPoolRejectsWhatPemDecodeWouldSkip(t *testing.T) {
+	good := testca.Bundle(testca.New(t, "old"))
+
+	leadingGarbage := append([]byte("garbage before the block\n"), good...)
+	if _, err := config.NewCertPool(leadingGarbage); err == nil {
+		t.Error("data before the first certificate should be an error")
+	}
+
+	unterminated := append([]byte("-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydA==\n"), good...)
+	if _, err := config.NewCertPool(unterminated); err == nil {
+		t.Error("an unterminated certificate block should be an error")
+	}
+}
+
 // TestNewCertPoolAcceptsTheShippedBundle: the stricter parsing above must not
 // reject what this binary actually ships with -- the embedded bundle holds both
 // DeployHQ CAs during the rotation, and it is read through this same function.
