@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"strings"
@@ -11,10 +12,38 @@ import (
 // NewCertPool parses a PEM bundle into a certificate pool. The bundle may hold
 // more than one CA — that is how an agent trusts the old and the new DeployHQ
 // CA simultaneously during a CA rotation.
+//
+// Every block has to parse. AppendCertsFromPEM would report success as soon as
+// ONE did, silently dropping the rest: a bundle whose incoming CA is corrupt
+// would start the agent trusting only the CA it already had, so the override
+// looks like it worked and then fails the moment the server rotates.
 func NewCertPool(caCert []byte) (*x509.CertPool, error) {
 	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(caCert) {
+	rest := caCert
+	added := 0
+
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			return nil, fmt.Errorf("CA bundle holds a %q block, not a certificate", block.Type)
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("parsing certificate %d in the CA bundle: %w", added+1, err)
+		}
+		pool.AddCert(cert)
+		added++
+	}
+
+	if added == 0 {
 		return nil, fmt.Errorf("failed to parse CA certificate")
+	}
+	if trailing := strings.TrimSpace(string(rest)); trailing != "" {
+		return nil, fmt.Errorf("CA bundle has %d trailing bytes that are not a PEM certificate", len(trailing))
 	}
 	return pool, nil
 }

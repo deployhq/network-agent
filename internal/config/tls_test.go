@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deployhq/network-agent/internal/caroot"
 	"github.com/deployhq/network-agent/internal/config"
 	"github.com/deployhq/network-agent/internal/testca"
 )
@@ -228,6 +229,44 @@ func TestNewCertPool(t *testing.T) {
 	}
 	if _, err := config.NewCertPool([]byte("garbage")); err == nil {
 		t.Error("unparsable bundle should be an error")
+	}
+}
+
+// TestNewCertPoolRejectsAPartiallyMalformedBundle: DEPLOY_AGENT_CA_FILE is the
+// escape hatch for trusting a new CA without waiting for a release, so it has
+// to fail loudly when it is wrong. Go's AppendCertsFromPEM reports success as
+// long as ONE block parsed, which would start the agent trusting only the CA it
+// already had -- the override appears to have worked and then fails at the
+// moment of rotation, which is the moment it exists for.
+func TestNewCertPoolRejectsAPartiallyMalformedBundle(t *testing.T) {
+	good := testca.Bundle(testca.New(t, "old"))
+	corrupt := []byte("-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n")
+
+	if _, err := config.NewCertPool(append(append([]byte{}, good...), corrupt...)); err == nil {
+		t.Error("a bundle whose second certificate is malformed should be an error")
+	}
+	if _, err := config.NewCertPool(append(append([]byte{}, corrupt...), good...)); err == nil {
+		t.Error("a bundle whose first certificate is malformed should be an error")
+	}
+}
+
+// TestNewCertPoolAcceptsTheShippedBundle: the stricter parsing above must not
+// reject what this binary actually ships with -- the embedded bundle holds both
+// DeployHQ CAs during the rotation, and it is read through this same function.
+func TestNewCertPoolAcceptsTheShippedBundle(t *testing.T) {
+	if _, err := config.NewCertPool(caroot.CACert); err != nil {
+		t.Fatalf("the embedded CA bundle does not parse: %v", err)
+	}
+}
+
+// TestNewCertPoolRejectsANonCertificateBlock: a PEM file of the right shape but
+// the wrong contents -- a private key pasted in place of a certificate -- is a
+// plausible operator mistake and must not read as an empty-but-valid bundle.
+func TestNewCertPoolRejectsANonCertificateBlock(t *testing.T) {
+	notACert := []byte("-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIA==\n-----END PRIVATE KEY-----\n")
+
+	if _, err := config.NewCertPool(notACert); err == nil {
+		t.Error("a bundle holding no certificate at all should be an error")
 	}
 }
 
