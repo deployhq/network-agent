@@ -26,6 +26,7 @@ type ServerConn struct {
 	done       chan struct{} // closed when Run() begins shutdown
 
 	access *acl.AccessList
+	opts   Options
 
 	mu    sync.Mutex
 	dests map[uint16]*destConn
@@ -34,7 +35,7 @@ type ServerConn struct {
 }
 
 // Connect dials the server and performs the mTLS handshake.
-func Connect(tlsCfg *tls.Config, serverAddr string, access *acl.AccessList, log *slog.Logger) (*ServerConn, error) {
+func Connect(tlsCfg *tls.Config, serverAddr string, access *acl.AccessList, opts Options, log *slog.Logger) (*ServerConn, error) {
 	conn, err := tls.DialWithDialer(
 		&net.Dialer{Timeout: 30 * time.Second},
 		"tcp",
@@ -51,6 +52,7 @@ func Connect(tlsCfg *tls.Config, serverAddr string, access *acl.AccessList, log 
 		serverSend: make(chan []byte, 256),
 		done:       make(chan struct{}),
 		access:     access,
+		opts:       opts,
 		dests:      make(map[uint16]*destConn),
 		log:        log,
 	}, nil
@@ -60,6 +62,7 @@ func Connect(tlsCfg *tls.Config, serverAddr string, access *acl.AccessList, log 
 // It blocks until the connection is closed and returns ErrRejected on REJECT.
 func (sc *ServerConn) Run() error {
 	go sc.writeLoop()
+	sc.sendRenewRequest()
 	go sc.keepaliveLoop()
 
 	err := sc.readLoop()
@@ -175,6 +178,9 @@ func (sc *ServerConn) handlePacket(pkt protocol.Packet) error {
 
 	case protocol.CmdKeepalive:
 		// no-op
+
+	case protocol.CmdRenewResponse:
+		return sc.handleRenewResponse(pkt.Payload)
 
 	default:
 		sc.log.Warn("unknown command", "cmd", pkt.Cmd)

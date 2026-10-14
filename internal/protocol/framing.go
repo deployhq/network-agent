@@ -79,6 +79,21 @@ func EncodeKeepalive() []byte {
 	return EncodePacket(CmdKeepalive, nil)
 }
 
+// EncodeRenewRequest encodes a RENEW_REQUEST packet. The payload is the UTF-8
+// implementation/version identifier of the agent, e.g. "go/0.3.0".
+func EncodeRenewRequest(identifier string) []byte {
+	return EncodePacket(CmdRenewRequest, []byte(identifier))
+}
+
+// EncodeRenewResponse encodes a RENEW_RESPONSE packet. Only the server sends
+// these; the agent side exists so tests can drive the full exchange.
+func EncodeRenewResponse(status byte, body []byte) []byte {
+	payload := make([]byte, 1+len(body))
+	payload[0] = status
+	copy(payload[1:], body)
+	return EncodePacket(CmdRenewResponse, payload)
+}
+
 // --- Per-command parse helpers ---
 
 // ParseCreateRequest parses a CREATE_REQUEST payload into connID, host, port.
@@ -118,6 +133,24 @@ func ParseDestroy(payload []byte) (connID uint16, ok bool) {
 		return
 	}
 	connID = binary.BigEndian.Uint16(payload[0:2])
+	ok = true
+	return
+}
+
+// ParseRenewRequest parses a RENEW_REQUEST payload, returning the agent's
+// implementation/version identifier. An empty payload is valid but yields "".
+func ParseRenewRequest(payload []byte) (identifier string) {
+	return string(payload)
+}
+
+// ParseRenewResponse parses a RENEW_RESPONSE payload into its status byte and
+// body. ok is false when the payload is too short to carry a status.
+func ParseRenewResponse(payload []byte) (status byte, body []byte, ok bool) {
+	if len(payload) < 1 {
+		return
+	}
+	status = payload[0]
+	body = payload[1:]
 	ok = true
 	return
 }

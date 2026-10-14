@@ -70,6 +70,33 @@ Add `-v` / `--verbose` before the command for debug logging.
 10.0.0.0/8
 ```
 
+## Upgrading
+
+```bash
+network-agent update && network-agent restart
+```
+
+`update` replaces the binary in place; `restart` is what makes the running
+agent pick it up. Both steps are needed — there is no background update check.
+
+## Certificate renewal
+
+DeployHQ is rotating the certificate authority behind the agent connection. The
+agent handles its side automatically: on each connection it tells DeployHQ which
+version it is running, and if DeployHQ has re-issued its client certificate the
+agent validates the new one, replaces `~/.deploy/agent.crt`, and reconnects to
+start using it. Nothing is written unless the new certificate pairs with the
+existing private key, keeps the same identity, and is signed by a trusted CA —
+and the replacement is atomic, so a failure never leaves a half-written
+certificate behind.
+
+Nothing is required of you beyond running a recent version. There is no
+interruption to deployments, no new claim code, and no change to
+`~/.deploy/agent.key`, which never leaves the machine.
+
+`network-agent check` prints the certificate authorities the binary trusts and
+when they expire.
+
 ## Migration from Ruby gem
 
 Users already running the Ruby gem can migrate in place — the Go binary uses the
@@ -88,6 +115,7 @@ To roll back: `network-agent stop`, then `gem install deploy-agent` and `deploy-
 | `DEPLOY_AGENT_PROXY_IP`      | `agent.deployhq.com`                             | Agent server hostname/IP            |
 | `DEPLOY_AGENT_CERTIFICATE_URL` | `https://api.deployhq.com/api/v1/agents/create` | Certificate provisioning endpoint   |
 | `DEPLOY_AGENT_NOVERIFY`      | unset                                            | Set to skip TLS server verification |
+| `DEPLOY_AGENT_CA_FILE`       | unset (uses the bundled CAs)                     | Path to a PEM bundle of certificate authorities to trust instead of the ones built into the binary. Unreadable or empty is an error, not a fall back. |
 
 ## Building from source
 
